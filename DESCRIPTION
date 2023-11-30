@@ -1,0 +1,24 @@
+Package: samplingin
+Title: Package for Survey Sampling
+Version: 0.0.0.9000
+Authors@R: 
+    person("Choerul", "Afifanto", , "choerulafifanto@gmail.com", role = c("aut", "cre", "cph"))
+Description: Survey Sampling using specified method. Currently utilizing two methods, Systematic and Probability Proportional to Size (PPS) sampling without replacement. Allocate predetermined allocations to smaller levels.
+License: MIT + file LICENSE
+Depends: 
+    R (>= 2.10)
+Imports: 
+    data.table,
+    dplyr,
+    DT,
+    magrittr,
+    rio,
+    rlang,
+    stats,
+    stringr,
+    tidyr,
+    utils
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.1
