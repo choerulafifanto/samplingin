@@ -1,9 +1,10 @@
 Package: samplingin
-Title: Package for Survey Sampling
-Version: 1.0.0
+Title: Dynamic Survey Sampling Solutions
+Version: 1.0.1
 Authors@R: 
-    person("Choerul", "Afifanto", , "choerulafifanto@gmail.com", role = c("aut", "cre", "cph"))
-Description: Survey Sampling using specified method. Currently utilizing two methods, Systematic and Probability Proportional to Size (PPS) sampling without replacement. Allocate predetermined allocations to smaller levels.
+    person("Choerul", "Afifanto", email = "choerulafifanto@gmail.com", role = c("aut", "cre", "cph"))
+Description: A robust solution employing both systematic and PPS (Probability Proportional to Size) sampling methods, ensuring a methodical and representative selection of data. 
+    Seamlessly allocate predetermined allocations to smaller levels. Kish, L. (1965) <https://books.google.co.id/books?id=xiZmAAAAIAAJ>.
 License: MIT + file LICENSE
 Depends: 
     R (>= 2.10)
