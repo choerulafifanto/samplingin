@@ -2,7 +2,7 @@
 % Please edit documentation in R/samplingin.R
 \name{doSampling}
 \alias{doSampling}
-\title{Select samples given its parameters}
+\title{Select Samples Given its Parameters}
 \usage{
 doSampling(
   pop,
@@ -11,9 +11,11 @@ doSampling(
   type,
   strata = NULL,
   ident = c("kdprov", "kdkab"),
+  implicitby = NULL,
   method = "systematic",
   auxVar = NA,
-  seed = 1
+  seed = 1,
+  verbose = TRUE
 )
 }
 \arguments{
@@ -29,22 +31,28 @@ doSampling(
 
 \item{ident}{group by on allocation dataframe}
 
+\item{implicitby}{variable used as implicit stratification}
+
 \item{method}{method of sampling : \code{"systematic"} (the default) or \code{"pps"}}
 
 \item{auxVar}{auxiliary variable for pps sampling (\code{method = "pps"})}
 
 \item{seed}{seed}
+
+\item{verbose}{verbose (\code{TRUE} as default)}
 }
 \value{
-list of pop (\code{"pop"}), samples data (\code{"dsampel"}), and details (\code{"rincian"})
+list of population data (\code{"pop"}), selected samples (\code{"dsampel"}), and details of sampling process (\code{"rincian"})
 }
 \description{
-Select samples given its parameters
+Samples selection using systematic or PPS (Probability Proportional to Size) sampling method.
 }
 \examples{
-\dontrun{
+
+\donttest{
 library(samplingin)
 
+# PPS Sampling
 dtSampling_pps = doSampling(
    pop = pop_dt
    , alloc = alokasi_dt
@@ -56,11 +64,16 @@ dtSampling_pps = doSampling(
    , seed = 1234
 )
 
+# Population data with flag sample
 pop_dt = dtSampling_pps$pop
+
+# Selected Samples
 dsampel = dtSampling_pps$dsampel
+
+# Details of sampling process
 rincian = dtSampling_pps$rincian
 
-
+# Systematic Sampling
 dtSampling_sys = doSampling(
    pop = pop_dt
    , alloc = alokasi_dt
@@ -71,8 +84,13 @@ dtSampling_sys = doSampling(
    , seed = 4321
 )
 
+# Population data with flag sample
 pop_dt = dtSampling_sys$pop
+
+# Selected Samples
 dsampel = dtSampling_sys$dsampel
+
+# Details of sampling process
 rincian = dtSampling_sys$rincian
 }
 }

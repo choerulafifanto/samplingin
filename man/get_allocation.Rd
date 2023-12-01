@@ -2,7 +2,7 @@
 % Please edit documentation in R/samplingin.R
 \name{get_allocation}
 \alias{get_allocation}
-\title{Get allocation from population tabulation given total allocation}
+\title{Allocate Predetermined Allocations to Smaller Levels}
 \usage{
 get_allocation(data, alokasi, group, pop_var = "jml", secondary = 0)
 }
@@ -21,16 +21,22 @@ get_allocation(data, alokasi, group, pop_var = "jml", secondary = 0)
 allocation at more detailed level
 }
 \description{
-Get allocation from population tabulation given total allocation
+Allocate predetermined allocations to smaller levels using proportional allocation method
 }
 \examples{
-\dontrun{
+
+library(samplingin)
+library(magrittr)
+
+contoh_alokasi = alokasi_dt \%>\%
+   dplyr::select(-n_primary) \%>\%
+   dplyr::mutate(nasional = 1)
+
 alokasi_dt = get_allocation(
-   data = contoh_alokasi \%>\% mutate(nasional = 1)
+   data = contoh_alokasi
    , alokasi = 100
    , group = c("nasional")
    , pop_var = "jml_kabkota"
-) \%>\%
-select(-nasional)
-}
+)
+
 }

@@ -36,7 +36,9 @@ popCheck = function(sampl,pop){
   return(sampl)
 }
 
-#' Get allocation from population tabulation given total allocation
+#' Allocate Predetermined Allocations to Smaller Levels
+#'
+#' Allocate predetermined allocations to smaller levels using proportional allocation method
 #'
 #' @param data population tabulation dataframe
 #' @param alokasi total allocation dataframe
@@ -47,15 +49,21 @@ popCheck = function(sampl,pop){
 #' @return allocation at more detailed level
 #' @export
 #' @examples
-#' \dontrun{
+#'
+#' library(samplingin)
+#' library(magrittr)
+#'
+#' contoh_alokasi = alokasi_dt %>%
+#'    dplyr::select(-n_primary) %>%
+#'    dplyr::mutate(nasional = 1)
+#'
 #' alokasi_dt = get_allocation(
-#'    data = contoh_alokasi %>% mutate(nasional = 1)
+#'    data = contoh_alokasi
 #'    , alokasi = 100
 #'    , group = c("nasional")
 #'    , pop_var = "jml_kabkota"
-#' ) %>%
-#' select(-nasional)
-#'}
+#' )
+#'
 get_allocation = function(data, alokasi, group, pop_var = "jml", secondary = 0){
   # if( is.na(falok) ){
   #   stop("Please select one variable as allocation sample")
@@ -208,7 +216,9 @@ createInterval = function(pop, method, strata, auxVar=NA, groupByVar=c("kdprov",
   )
 }
 
-#' Select samples given its parameters
+#' Select Samples Given its Parameters
+#'
+#' Samples selection using systematic or PPS (Probability Proportional to Size) sampling method.
 #'
 #' @param pop pop dataframe
 #' @param alloc allocation dataframe
@@ -216,16 +226,20 @@ createInterval = function(pop, method, strata, auxVar=NA, groupByVar=c("kdprov",
 #' @param type type value for sample classification ('U' = Utama, 'P' = pengganti)
 #' @param strata strata variable, must available on both pop and alloc dataframe
 #' @param ident group by on allocation dataframe
+#' @param implicitby variable used as implicit stratification
 #' @param method method of sampling : `"systematic"` (the default) or `"pps"`
 #' @param auxVar auxiliary variable for pps sampling (`method = "pps"`)
 #' @param seed seed
+#' @param verbose verbose (`TRUE` as default)
 #'
-#' @return list of pop (`"pop"`), samples data (`"dsampel"`), and details (`"rincian"`)
+#' @return list of population data (`"pop"`), selected samples (`"dsampel"`), and details of sampling process (`"rincian"`)
 #' @export
 #' @examples
-#' \dontrun{
+#'
+#' \donttest{
 #' library(samplingin)
 #'
+#' # PPS Sampling
 #' dtSampling_pps = doSampling(
 #'    pop = pop_dt
 #'    , alloc = alokasi_dt
@@ -237,11 +251,16 @@ createInterval = function(pop, method, strata, auxVar=NA, groupByVar=c("kdprov",
 #'    , seed = 1234
 #' )
 #'
+#' # Population data with flag sample
 #' pop_dt = dtSampling_pps$pop
+#'
+#' # Selected Samples
 #' dsampel = dtSampling_pps$dsampel
+#'
+#' # Details of sampling process
 #' rincian = dtSampling_pps$rincian
 #'
-#'
+#' # Systematic Sampling
 #' dtSampling_sys = doSampling(
 #'    pop = pop_dt
 #'    , alloc = alokasi_dt
@@ -252,12 +271,17 @@ createInterval = function(pop, method, strata, auxVar=NA, groupByVar=c("kdprov",
 #'    , seed = 4321
 #' )
 #'
+#' # Population data with flag sample
 #' pop_dt = dtSampling_sys$pop
+#'
+#' # Selected Samples
 #' dsampel = dtSampling_sys$dsampel
+#'
+#' # Details of sampling process
 #' rincian = dtSampling_sys$rincian
 #' }
-doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","kdkab"), method="systematic",
-                      auxVar=NA, seed=1){
+doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","kdkab"), implicitby = NULL, method="systematic",
+                      auxVar=NA, seed=1, verbose = TRUE){
   # Warning apabila syarat tidak terpenuhi
   if( length(method)==0 | length(method)>1 | !(method %in% c("systematic", "pps"))){
     stop("Please select one method. systematic or pps")
@@ -278,6 +302,17 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
 
     strata = "tmp_strata"
   }
+
+  if( !is.null(implicitby) ){
+    sortVar = c(ident, implicitby)
+    if(verbose) message("sort by:",ident,"and",implicitby,"\n")
+  }else{
+    sortVar = ident
+    if(verbose) message("no implicit stratification variable chosen, sort by: ",ident,"\n")
+  }
+
+  pop = pop %>%
+    arrange_at(sortVar)
 
   # Variabel groupByVar merupakan gabungan parameter ident dan strata
   # sesuai dengan level group pada alokasi
@@ -347,7 +382,7 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
               lis$ar      = rincian[i,"ar"]
               lis$k       = rincian[i,"k"]
 
-              cat("START: ")
+              if(verbose) cat("START: ")
 
               # Membuat kondisi penarikan sampel
               conds = ""
@@ -355,9 +390,9 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
                 # Menuliskan pada console, progres penarikan sampelnya
                 txt = eval(parse(text=paste0("lis[['",groupByVar[ii],"']]"))) %>% as.character()
                 if( ii == length(groupByVar) ){
-                  cat(" ",groupByVar[[ii]],txt,"\n")
+                  if(verbose) cat(" ",groupByVar[[ii]],txt,"\n")
                 }else{
-                  cat(" ",groupByVar[[ii]],txt)
+                  if(verbose) cat(" ",groupByVar[[ii]],txt)
                 }
 
                 # Penyusunan kondisi penarikan sampel sesuai
@@ -585,18 +620,18 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
                 lis$ar      = rincian[i,"ar"]
                 lis$k       = rincian[i,"k"]
 
-                # cat("START:")
+                # ==cat("START:")
 
                 # Membuat kondisi penarikan sampel
                 conds = ""
                 for(ii in 1:length(groupByVar)){
                   # Menuliskan pada console, progres penarikan sampelnya
                   txt = eval(parse(text=paste0("lis[['",groupByVar[ii],"']]"))) %>% as.character()
-                  # if( ii == length(groupByVar) ){
-                  #   cat(" ",groupByVar[[ii]],txt,"\n")
-                  # }else{
-                  #   cat(" ",groupByVar[[ii]],txt)
-                  # }
+                  if( ii == length(groupByVar) ){
+                    if(verbose) cat(" ",groupByVar[[ii]],txt,"\n")
+                  }else{
+                    if(verbose) cat(" ",groupByVar[[ii]],txt)
+                  }
 
                   # Penyusunan kondisi penarikan sampel sesuai
                   # dengan rincian dan variabel group
@@ -641,9 +676,9 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
                     # cat(nTemp," == ",as.numeric(ix), " == ", fs,"\n")
                     # Cek apakah BS terpilih lebih dari sekali
                     if(fs == last_fs){
-                      cat(lis[["ar"]],"\n")
-                      cat("ix: ",as.numeric(ix)," last_fs: ",last_fs," fs: ",fs,"\n")
-                      cat("INDEX SAMA (ULANG)\n")
+                      if(verbose) cat(lis[["ar"]],"\n")
+                      if(verbose) cat("ix: ",as.numeric(ix)," last_fs: ",last_fs," fs: ",fs,"\n")
+                      if(verbose) cat("INDEX SAMA (ULANG)\n")
                       isUlang = TRUE
                     } else {
                       last_fs = fs
