@@ -1,6 +1,6 @@
 Package: samplingin
 Title: Package for Survey Sampling
-Version: 0.0.0.9000
+Version: 1.0.0
 Authors@R: 
     person("Choerul", "Afifanto", , "choerulafifanto@gmail.com", role = c("aut", "cre", "cph"))
 Description: Survey Sampling using specified method. Currently utilizing two methods, Systematic and Probability Proportional to Size (PPS) sampling without replacement. Allocate predetermined allocations to smaller levels.
