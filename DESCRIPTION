@@ -1,6 +1,6 @@
 Package: samplingin
 Title: Dynamic Survey Sampling Solutions
-Version: 1.0.2
+Version: 1.0.3
 Authors@R: 
     person("Choerul", "Afifanto", , "choerulafifanto@gmail.com", role = c("aut", "cre", "cph"))
 Description: A robust solution employing both systematic and PPS
@@ -14,13 +14,9 @@ Depends:
 Imports: 
     data.table,
     dplyr,
-    DT,
     magrittr,
-    rio,
     rlang,
     stats,
-    stringr,
-    tidyr,
     utils
 Encoding: UTF-8
 LazyData: true
