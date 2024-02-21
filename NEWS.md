@@ -1,3 +1,13 @@
+# samplingin 1.0.6
+
+Changes in version 1.0.6
+
+Bug fixes
+
+* Resolving the issue of having the same random number in each row.
+
+* Adding unselected sample allocation messages.
+
 # samplingin 1.0.5
 
 Changes in version 1.0.5
