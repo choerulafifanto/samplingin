@@ -1,3 +1,13 @@
+# samplingin 1.0.7
+
+Changes in version 1.0.7
+
+Bug fixes
+
+* Resolving the issue of creating interval in PPS Sampling.
+
+* Resolving the issue of getting allocation variable
+
 # samplingin 1.0.6
 
 Changes in version 1.0.6
