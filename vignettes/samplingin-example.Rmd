@@ -1,0 +1,393 @@
+---
+title: "Introduction to samplingin"
+# author: "Choerul Afifanto"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction to samplingin}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = T, comment = "#>")
+options(tibble.print_min = 4L, tibble.print_max = 4L)
+library(samplingin)
+library(dplyr)
+library(magrittr)
+set.seed(114)
+```
+
+## Population DataFrame
+
+We'll use the dataset `pop_dt`. The dataset contains tabulation of Indonesia's population based on the results of the 2020 population census by regency/city and gender from BPS-Statistics Indonesia <https://sensus.bps.go.id/main/index/sp2020>.
+
+```{r}
+dim(pop_dt)
+
+pop_dt %>% head()
+```
+
+## Allocation DataFrame
+
+The dataset used is `alokasi_dt` which is a dataset consisting of sample allocations for each province for sampling purposes.
+
+```{r}
+dim(alokasi_dt)
+
+alokasi_dt
+```
+
+## Simple Random Sampling (SRS)
+
+A simple random sample is a randomly selected subset of a population. In this sampling method, each member of the population has an exactly equal chance of being selected.
+
+The following is the syntax for simple random sampling. Use parameter `method = 'srs'`
+
+```{r}
+dtSampling_srs = doSampling(
+  pop     = pop_dt,
+  alloc   = alokasi_dt,
+  nsample = "n_primary",
+  seed    = 7891,
+  method  = "srs",
+  ident   = c("kdprov"),
+  type    = "U"
+)
+```
+
+Displaying the primary sampling result
+
+#### Population Sampled
+
+```{r}
+head(dtSampling_srs$pop)
+```
+
+#### Units Sampled
+
+```{r}
+head(dtSampling_srs$sampledf)
+
+dtSampling_srs$sampledf %>% nrow
+```
+
+#### Sampling Details
+
+```{r}
+head(dtSampling_srs$details)
+```
+
+## Systematic Random Sampling
+
+Systematic random sampling is a method to select samples at a particular preset interval. Using population and allocation data that has been provided previously, we will carry out systematic random sampling by utilizing the `doSampling` function from `samplingin` package. Use parameter `method = 'systematic'`
+
+### Primary Units Sampling
+
+The following is the syntax for sampling the primary units
+
+```{r}
+dtSampling_u = doSampling(
+  pop     = pop_dt,
+  alloc   = alokasi_dt,
+  nsample = "n_primary",
+  seed    = 2,
+  method  = "systematic",
+  ident   = c("kdprov"),
+  type    = "U"
+)
+```
+
+Displaying the primary sampling result
+
+#### Population Sampled
+
+```{r}
+head(dtSampling_u$pop)
+```
+
+#### Units Sampled
+
+```{r}
+head(dtSampling_u$sampledf)
+
+dtSampling_u$sampledf %>% nrow
+```
+
+#### Sampling Details
+
+```{r}
+head(dtSampling_u$details)
+```
+
+### Secondary Units Sampling
+
+To perform sampling for secondary units, we utilize the population results from prior sampling, which have been marked for the selected primary units. Parameters in `doSampling` are added with `is_secondary=TRUE`.
+
+```{r}
+alokasi_dt_p = alokasi_dt %>% 
+  mutate(n_secondary = 2*n_primary)
+
+dtSampling_p = doSampling(
+  pop     = dtSampling_u$pop,
+  alloc   = alokasi_dt_p,
+  nsample = "n_secondary",
+  seed    = 243,
+  method  = "systematic",
+  ident   = c("kdprov"),
+  type    = "P",
+  is_secondary = TRUE
+)
+```
+
+It can be seen that there are still 2 units that have not been selected as samples. To view the allocation that has not yet been selected as samples, it is as follows:
+
+```{r}
+dtSampling_p$details %>% 
+  filter(n_deficit>0)
+```
+
+Displaying the secondary sampling result
+
+#### Population Sampled
+
+```{r}
+head(dtSampling_p$pop)
+```
+
+Flags for primary and secondary units
+
+```{r}
+dtSampling_p$pop %>% count(flags)
+```
+
+#### Units Sampled
+
+```{r}
+head(dtSampling_p$sampledf)
+
+dtSampling_p$sampledf %>% nrow
+```
+
+#### Sampling Details
+
+```{r}
+head(dtSampling_p$details)
+```
+
+## PPS Systematic Sampling
+
+PPS systematic sampling is a method of sampling from a finite population in which a size measure is available for each population unit before sampling and where the probability of selecting a unit is proportional to its size. Units with larger sizes have more chance to be selected. We will use `doSampling` function with parameter `method = 'pps'` and `auxVar = 'Total'` for its auxiliary variable.
+
+```{r}
+dtSampling_pps = doSampling(
+  pop     = pop_dt,
+  alloc   = alokasi_dt,
+  nsample = "n_primary",
+  seed    = 321,
+  method  = "pps",
+  auxVar  = "Total",
+  ident   = c("kdprov"),
+  type    = "U"
+)
+```
+
+Displaying the PPS sampling result
+
+#### Population Sampled
+
+```{r}
+head(dtSampling_pps$pop)
+```
+
+#### Units Sampled
+
+```{r}
+head(dtSampling_pps$sampledf)
+
+dtSampling_pps$sampledf %>% nrow
+```
+
+#### Sampling Details
+
+```{r}
+head(dtSampling_pps$details)
+```
+
+## Sampling using Stratification
+
+For sampling that utilizes stratification, the `doSampling` function includes additional parameter called `strata`. The strata variable must be available in the population and the allocation being used. For example, in the `pop_dt` data, information about `strata` is added, namely `strata_kabkot`, which indicates information about districts (strata_kabkot = 1) and cities (strata_kabkot = 2).
+
+```{r}
+pop_dt_strata = pop_dt %>% 
+  mutate(
+    strata_kabkot = ifelse(substr(kdkab,1,1)=='7', 2, 1)
+  )
+
+alokasi_dt_strata = pop_dt_strata %>% 
+  group_by(kdprov,strata_kabkot) %>% 
+  summarise(
+    jml_kabkota = n()
+  ) %>% 
+  ungroup %>% 
+  left_join(
+    alokasi_dt %>% 
+      select(kdprov,n_primary) %>% 
+      rename(n_alloc = n_primary)
+  )
+  
+alokasi_dt_strata = alokasi_dt_strata %>%
+  get_allocation(n_alloc = "n_alloc", group = c("kdprov"), pop_var = "jml_kabkota")
+
+dtSampling_strata = doSampling(
+  pop     = pop_dt_strata,
+  alloc   = alokasi_dt_strata,
+  nsample = "n_primary",
+  seed    = 3512,
+  method  = "systematic",
+  strata  = "strata_kabkot",
+  ident   = c("kdprov"),
+  type    = "U"
+)
+```
+
+Displaying the sampling result with stratification
+
+#### Population Sampled
+
+```{r}
+head(dtSampling_strata$pop)
+```
+
+#### Units Sampled
+
+```{r}
+head(dtSampling_strata$sampledf)
+
+dtSampling_strata$sampledf %>% nrow
+
+dtSampling_strata$sampledf %>% count(strata_kabkot)
+
+```
+
+#### Sampling Details
+
+```{r}
+head(dtSampling_strata$details)
+```
+
+## Sampling with Implicit Stratification
+
+So that the characteristics of the selected sample are distributed according to certain variables, sampling sometimes employs **implicit stratification**. For instance, if you aim to obtain samples distributed according to the total population, you can add the parameter `implicitby = 'Total'` when conducting sampling.
+
+```{r}
+dtSampling_implicit = doSampling(
+  pop        = pop_dt_strata,
+  alloc      = alokasi_dt_strata,
+  nsample    = "n_primary",
+  seed       = 3512,
+  method     = "systematic",
+  strata     = "strata_kabkot",
+  implicitby = "Total",
+  ident      = c("kdprov"),
+  type       = "U"
+)
+```
+
+Displaying the sampling result with implicit stratification
+
+#### Population Sampled
+
+```{r}
+head(dtSampling_implicit$pop)
+```
+
+#### Units Sampled
+
+```{r}
+head(dtSampling_implicit$sampledf)
+
+dtSampling_implicit$sampledf %>% nrow
+
+dtSampling_implicit$sampledf %>% count(strata_kabkot)
+
+```
+
+#### Sampling Details
+
+```{r}
+head(dtSampling_implicit$details)
+```
+
+## Sampling with Predetermined Random Number
+
+Sometimes, the random numbers for sampling have already been determined beforehand. Thus, for sampling using those predetermined random numbers, the `samplingin` package accommodates this by adding the parameter `predetermined_rn`, which takes the value of the variable storing the predetermined random numbers. For example, if the random numbers are stored in the allocation data frame under the variable name `arand`, thus we add `predetermined_rn = 'arand'`
+
+```{r}
+set.seed(988)
+alokasi_dt_arand = alokasi_dt_strata %>%
+  mutate(arand = runif(n(),0,1))
+
+alokasi_dt_arand %>% as.data.frame %>% head(10)
+
+dtSampling_prn = doSampling(
+  pop        = pop_dt_strata,
+  alloc      = alokasi_dt_arand,
+  nsample    = "n_primary",
+  seed       = 974,
+  method     = "systematic",
+  strata     = "strata_kabkot",
+  predetermined_rn = "arand",
+  ident      = c("kdprov"),
+  type       = "U"
+)
+```
+
+Displaying the sampling result with predetermined random number
+
+#### Population Sampled
+
+```{r}
+head(dtSampling_prn$pop)
+```
+
+#### Units Sampled
+
+```{r}
+head(dtSampling_prn$sampledf)
+
+dtSampling_prn$sampledf %>% nrow
+
+```
+
+#### Sampling Details
+
+```{r}
+head(dtSampling_prn$details)
+```
+
+## Allocate predetermined allocations to smaller levels
+
+One of the supporting functions in the `samplingin` package is `get_allocation`. This function aims to allocate sample allocations to lower levels using the *proportional allocation* method based on the square root of the specified variable.
+
+For example, sample allocations are available at the Province level, which will be allocated to lower levels such as Districts/Cities using the *proportional allocation* method based on the square root of the total population (`Total`).
+
+```{r}
+set.seed(242)
+alokasi_prov = alokasi_dt %>%
+  select(-jml_kabkota, -n_primary) %>%
+  mutate(init_alloc = as.integer(runif(n(), 100, 200))) %>%
+  as.data.frame()
+
+alokasi_prov %>% head(10)
+
+alokasi_prov %>% summarise(sum(init_alloc))
+
+alokasi_kab = pop_dt %>%
+  left_join(alokasi_prov) %>%
+  get_allocation(n_alloc = "init_alloc", group = c("kdprov"), pop_var = "Total") %>%
+  as.data.frame()
+
+alokasi_kab %>% head(10)
+
+alokasi_kab %>% summarise(sum(n_primary))
+```
