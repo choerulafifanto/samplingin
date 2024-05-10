@@ -1,3 +1,25 @@
+# samplingin 1.1.0
+
+Changes in version 1.1.0
+
+Added
+
+* Adding parameter `is_secondary` in `doSampling` function. It maintains existing selected samples in `pop` data.frame
+
+* PPS using `sampling::inclusionprobabilities()`
+
+Changed
+
+* Return value variable on `doSampling`, `dsampel` to `sampledf` and `rincian` to `details`, `pop` remains the same
+
+* Change `nsampel` to `nsample` parameter in `doSampling` function
+
+* `sisa` changed to `n_deficit` on details data.frame
+
+* `jml` changed to `n_selected` on details data.frame
+
+* Change in deprecated `.dots = var` to `across(all_of(var))` 
+
 # samplingin 1.0.7
 
 Changes in version 1.0.7

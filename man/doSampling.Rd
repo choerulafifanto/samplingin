@@ -7,7 +7,7 @@
 doSampling(
   pop,
   alloc,
-  nsampel,
+  nsample,
   type,
   strata = NULL,
   ident = c("kdprov", "kdkab"),
@@ -15,6 +15,8 @@ doSampling(
   method = "systematic",
   auxVar = NA,
   seed = 1,
+  predetermined_rn = NULL,
+  is_secondary = FALSE,
   verbose = TRUE
 )
 }
@@ -23,9 +25,9 @@ doSampling(
 
 \item{alloc}{allocation dataframe}
 
-\item{nsampel}{variable on alloc df as allocation sample}
+\item{nsample}{variable on alloc df as allocation sample}
 
-\item{type}{type value for sample classification ('U' = Utama, 'P' = pengganti)}
+\item{type}{type value for sample classification ('U' = Primary Samples, 'P' = Secondary Samples)}
 
 \item{strata}{strata variable, must available on both pop and alloc dataframe}
 
@@ -33,16 +35,20 @@ doSampling(
 
 \item{implicitby}{variable used as implicit stratification}
 
-\item{method}{method of sampling : \code{"systematic"} (the default) or \code{"pps"}}
+\item{method}{method of sampling : \code{"systematic"} (the default), \code{"srs"} or \code{"pps"}}
 
 \item{auxVar}{auxiliary variable for pps sampling (\code{method = "pps"})}
 
 \item{seed}{seed}
 
+\item{predetermined_rn}{predetermined random number variable on allocation dataframe, the default value is NULL, random number will be generated randomly}
+
+\item{is_secondary}{if the value is \code{TRUE}, it will maintains existing primary samples and selects units that have not been selected as samples (\code{FALSE} as default)}
+
 \item{verbose}{verbose (\code{TRUE} as default)}
 }
 \value{
-list of population data (\code{"pop"}), selected samples (\code{"dsampel"}), and details of sampling process (\code{"rincian"})
+list of population data (\code{"pop"}), selected samples (\code{"sampledf"}), and details of sampling process (\code{"details"})
 }
 \description{
 Samples selection using systematic or PPS (Probability Proportional to Size) sampling method.
@@ -51,46 +57,118 @@ Samples selection using systematic or PPS (Probability Proportional to Size) sam
 
 \donttest{
 library(samplingin)
+library(magrittr)
+library(dplyr)
+
+# Simple Random Sampling (SRS)
+dtSampling_srs = doSampling(
+   pop         = pop_dt
+   , alloc     = alokasi_dt
+   , nsample   = "n_primary"
+   , type      = "U"
+   , ident     = c("kdprov")
+   , method    = "srs"
+   , auxVar    = "Total"
+   , seed      = 7892
+)
+
+# Population data with flag sample
+pop_dt = dtSampling_srs$pop
+
+# Selected Samples
+dsampel = dtSampling_srs$sampledf
+
+# Details of sampling process
+rincian = dtSampling_srs$details
 
 # PPS Sampling
 dtSampling_pps = doSampling(
-   pop = pop_dt
-   , alloc = alokasi_dt
-   , nsampel = "n_primary"
-   , type = "U"
-   , ident = c("kdprov")
-   , method = "pps"
-   , auxVar = "Total"
-   , seed = 1234
+   pop         = pop_dt
+   , alloc     = alokasi_dt
+   , nsample   = "n_primary"
+   , type      = "U"
+   , ident     = c("kdprov")
+   , method    = "pps"
+   , auxVar    = "Total"
+   , seed      = 1234
 )
 
 # Population data with flag sample
 pop_dt = dtSampling_pps$pop
 
 # Selected Samples
-dsampel = dtSampling_pps$dsampel
+dsampel = dtSampling_pps$sampledf
 
 # Details of sampling process
-rincian = dtSampling_pps$rincian
+rincian = dtSampling_pps$details
 
 # Systematic Sampling
 dtSampling_sys = doSampling(
-   pop = pop_dt
-   , alloc = alokasi_dt
-   , nsampel = "n_primary"
-   , type = "U"
-   , ident = c("kdprov")
-   , method = "systematic"
-   , seed = 4321
+   pop         = pop_dt
+   , alloc     = alokasi_dt
+   , nsample   = "n_primary"
+   , type      = "U"
+   , ident     = c("kdprov")
+   , method    = "systematic"
+   , seed      = 4321
 )
 
 # Population data with flag sample
 pop_dt = dtSampling_sys$pop
 
 # Selected Samples
-dsampel = dtSampling_sys$dsampel
+dsampel = dtSampling_sys$sampledf
 
 # Details of sampling process
-rincian = dtSampling_sys$rincian
+rincian = dtSampling_sys$details
+
+# Systematic Sampling (Secondary Samples)
+
+alokasi_dt_p = alokasi_dt \%>\%
+   mutate(n_secondary = 2 * n_primary)
+
+dtSampling_sys_p = doSampling(
+   pop           = dtSampling_sys$pop
+   , alloc       = alokasi_dt_p
+   , nsample     = "n_secondary"
+   , type        = "P"
+   , ident       = c("kdprov")
+   , method      = "systematic"
+   , seed        = 6789
+   , is_secondary = TRUE
+)
+
+# Population data with flag sample
+pop_dt = dtSampling_sys_p$pop
+
+# Selected Samples
+dsampel = dtSampling_sys_p$sampledf
+
+# Details of sampling process
+rincian = dtSampling_sys_p$details
+
+# Systematic Sampling with predetermined random number (predetermined_rn parameter)
+
+alokasi_dt_rn = alokasi_dt \%>\% rowwise() \%>\% mutate(ar = runif(n(),0,1)) \%>\% ungroup
+
+dtSampling_sys = doSampling(
+   pop         = pop_dt
+   , alloc     = alokasi_dt_rn
+   , nsample   = "n_primary"
+   , type      = "U"
+   , ident     = c("kdprov")
+   , method    = "systematic"
+   , predetermined_rn = "ar"
+   , seed      = 4321
+)
+
+# Population data with flag sample
+pop_dt = dtSampling_sys$pop
+
+# Selected Samples
+dsampel = dtSampling_sys$sampledf
+
+# Details of sampling process
+rincian = dtSampling_sys$details
 }
 }

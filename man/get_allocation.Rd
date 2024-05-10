@@ -4,12 +4,12 @@
 \alias{get_allocation}
 \title{Allocate Predetermined Allocations to Smaller Levels}
 \usage{
-get_allocation(data, alokasi, group, pop_var = "jml", secondary = 0)
+get_allocation(data, n_alloc, group, pop_var = "jml", secondary = 0)
 }
 \arguments{
 \item{data}{population tabulation dataframe}
 
-\item{alokasi}{total allocation dataframe}
+\item{n_alloc}{total allocation dataframe}
 
 \item{group}{group of allocation level to be obtained}
 
@@ -34,7 +34,7 @@ contoh_alokasi = alokasi_dt \%>\%
 
 alokasi_dt = get_allocation(
    data = contoh_alokasi
-   , alokasi = 100
+   , n_alloc = 100
    , group = c("nasional")
    , pop_var = "jml_kabkota"
 )

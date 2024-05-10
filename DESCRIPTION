@@ -3,21 +3,27 @@ Title: Dynamic Survey Sampling Solutions
 Version: 1.0.7
 Authors@R: 
     person("Choerul", "Afifanto", , "choerulafifanto@gmail.com", role = c("aut", "cre", "cph"))
-Description: A robust solution employing both systematic and PPS
-    (Probability Proportional to Size) sampling methods, ensuring a
-    methodical and representative selection of data.  Seamlessly allocate
-    predetermined allocations to smaller levels. Kish, L. (1965)
-    <https://books.google.co.id/books?id=xiZmAAAAIAAJ>.
+Description: A robust solution employing SRS (Simple Random Sampling),
+    systematic and PPS (Probability Proportional to Size) sampling
+    methods, ensuring a methodical and representative selection of data.
+    Seamlessly allocate predetermined allocations to smaller levels.
 License: MIT + file LICENSE
 Depends: 
     R (>= 2.10)
 Imports: 
+    base,
     data.table,
     dplyr,
     magrittr,
     rlang,
+    sampling,
     stats,
     utils
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: 
+    knitr
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)

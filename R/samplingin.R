@@ -41,7 +41,7 @@ popCheck = function(sampl,pop){
 #' Allocate predetermined allocations to smaller levels using proportional allocation method
 #'
 #' @param data population tabulation dataframe
-#' @param alokasi total allocation dataframe
+#' @param n_alloc total allocation dataframe
 #' @param group group of allocation level to be obtained
 #' @param pop_var population variable in data
 #' @param secondary how many times the secondary sample compares to primary sample
@@ -59,36 +59,52 @@ popCheck = function(sampl,pop){
 #'
 #' alokasi_dt = get_allocation(
 #'    data = contoh_alokasi
-#'    , alokasi = 100
+#'    , n_alloc = 100
 #'    , group = c("nasional")
 #'    , pop_var = "jml_kabkota"
 #' )
 #'
-get_allocation = function(data, alokasi, group, pop_var = "jml", secondary = 0){
+get_allocation = function(data, n_alloc, group, pop_var = "jml", secondary = 0){
   # if( is.na(falok) ){
   #   stop("Please select one variable as allocation sample")
   #   return()
   # }
+
+  data_1 = data.frame()
+  if(is.numeric(n_alloc)){
+    data_1 = data %>%
+      mutate(
+        fsqrt=sqrt(eval(parse(text = pop_var)))
+      ) %>%
+      group_by(across(all_of(group))) %>%
+      mutate(sfsqrt = sum(fsqrt)) %>%
+      ungroup() %>%
+      mutate(
+        alokasi_n = n_alloc
+      )
+  }else{
+    data_1 = data %>%
+      mutate(
+        fsqrt=sqrt(eval(parse(text = pop_var)))
+      ) %>%
+      group_by(across(all_of(group))) %>%
+      mutate(sfsqrt = sum(fsqrt)) %>%
+      ungroup() %>%
+      mutate(
+        alokasi_n = eval(parse(text = n_alloc))
+      )
+  }
 
   if( is.na(pop_var) ){
     stop("Please select one variable as population variable")
     return()
   }
 
-  ret = data %>%
-    mutate(
-      fsqrt=sqrt(eval(parse(text = pop_var)))
-    ) %>%
-    group_by(.dots=group) %>%
-    mutate(sfsqrt = sum(fsqrt)) %>%
-    ungroup() %>%
-    mutate(
-      alokasi_n = alokasi
-    ) %>%
+  ret = data_1 %>%
     mutate(
       alok0 = fsqrt*alokasi_n/sfsqrt
     ) %>%
-    group_by(.dots=group) %>%
+    group_by(across(all_of(group))) %>%
     mutate(
       alok = round_preserve_sum(alok0)
       , alok_p = ceiling(secondary * alok)
@@ -185,11 +201,17 @@ createInterval = function(pop, method, strata, auxVar=NA, groupByVar=c("kdprov",
     mRek = pop
   }
   switch (method,
+          "srs" = {
+            mRek = mRek %>%
+              mutate(INDEX = row_number())
+
+            return(mRek)
+          },
           "systematic" = {
-            mRek = mRek %>% group_by(.dots = groupByVar) %>%
+            mRek = mRek %>% group_by(across(all_of(groupByVar))) %>%
               mutate(
                 VMAX = ifelse(!is.na(!!rlang::parse_quo(strata, env = caller_env())), row_number(), 0),
-                VMIN = ifelse(!is.na(!!rlang::parse_quo(strata, env = caller_env())), as.integer(VMAX), 0)) %>%
+                VMIN = ifelse(!is.na(!!rlang::parse_quo(strata, env = caller_env())), as.numeric(VMAX), 0)) %>%
               ungroup %>%
               mutate(INDEX = row_number())
 
@@ -203,11 +225,11 @@ createInterval = function(pop, method, strata, auxVar=NA, groupByVar=c("kdprov",
 
             # cat("Auxiliary variable is: ",auxVar,"\n")
 
-            mRek = mRek %>% group_by(.dots = groupByVar) %>%
-              mutate(VMAX = ifelse(!is.na(!!rlang::parse_quo(strata, env = caller_env())) & is.na(certainty),
-                                   cumsum(eval(parse(text=auxVar)) * is.na(certainty)), 0),
-                     VMIN = ifelse(!is.na(!!rlang::parse_quo(strata, env = caller_env())) & is.na(certainty),
-                                   as.integer(VMAX - eval(parse(text=auxVar)) + 1), 0) ) %>%
+            mRek = mRek %>% group_by(across(all_of(groupByVar))) %>%
+              mutate(VMAX = ifelse(!is.na(!!rlang::parse_quo(strata, env = caller_env())) ,
+                                   cumsum(eval(parse(text=auxVar))), 0),
+                     VMIN = ifelse(!is.na(!!rlang::parse_quo(strata, env = caller_env())),
+                                   as.numeric(VMAX - eval(parse(text=auxVar)) + 1), 0) ) %>%
               ungroup %>%
               mutate(INDEX = row_number())
 
@@ -222,78 +244,162 @@ createInterval = function(pop, method, strata, auxVar=NA, groupByVar=c("kdprov",
 #'
 #' @param pop pop dataframe
 #' @param alloc allocation dataframe
-#' @param nsampel variable on alloc df as allocation sample
-#' @param type type value for sample classification ('U' = Utama, 'P' = pengganti)
+#' @param nsample variable on alloc df as allocation sample
+#' @param type type value for sample classification ('U' = Primary Samples, 'P' = Secondary Samples)
 #' @param strata strata variable, must available on both pop and alloc dataframe
 #' @param ident group by on allocation dataframe
 #' @param implicitby variable used as implicit stratification
-#' @param method method of sampling : `"systematic"` (the default) or `"pps"`
+#' @param method method of sampling : `"systematic"` (the default), `"srs"` or `"pps"`
 #' @param auxVar auxiliary variable for pps sampling (`method = "pps"`)
 #' @param seed seed
+#' @param predetermined_rn predetermined random number variable on allocation dataframe, the default value is NULL, random number will be generated randomly
+#' @param is_secondary if the value is `TRUE`, it will maintains existing primary samples and selects units that have not been selected as samples (`FALSE` as default)
 #' @param verbose verbose (`TRUE` as default)
 #'
-#' @return list of population data (`"pop"`), selected samples (`"dsampel"`), and details of sampling process (`"rincian"`)
+#' @return list of population data (`"pop"`), selected samples (`"sampledf"`), and details of sampling process (`"details"`)
 #' @export
 #' @examples
 #'
 #' \donttest{
 #' library(samplingin)
+#' library(magrittr)
+#' library(dplyr)
+#'
+#' # Simple Random Sampling (SRS)
+#' dtSampling_srs = doSampling(
+#'    pop         = pop_dt
+#'    , alloc     = alokasi_dt
+#'    , nsample   = "n_primary"
+#'    , type      = "U"
+#'    , ident     = c("kdprov")
+#'    , method    = "srs"
+#'    , auxVar    = "Total"
+#'    , seed      = 7892
+#' )
+#'
+#' # Population data with flag sample
+#' pop_dt = dtSampling_srs$pop
+#'
+#' # Selected Samples
+#' dsampel = dtSampling_srs$sampledf
+#'
+#' # Details of sampling process
+#' rincian = dtSampling_srs$details
 #'
 #' # PPS Sampling
 #' dtSampling_pps = doSampling(
-#'    pop = pop_dt
-#'    , alloc = alokasi_dt
-#'    , nsampel = "n_primary"
-#'    , type = "U"
-#'    , ident = c("kdprov")
-#'    , method = "pps"
-#'    , auxVar = "Total"
-#'    , seed = 1234
+#'    pop         = pop_dt
+#'    , alloc     = alokasi_dt
+#'    , nsample   = "n_primary"
+#'    , type      = "U"
+#'    , ident     = c("kdprov")
+#'    , method    = "pps"
+#'    , auxVar    = "Total"
+#'    , seed      = 1234
 #' )
 #'
 #' # Population data with flag sample
 #' pop_dt = dtSampling_pps$pop
 #'
 #' # Selected Samples
-#' dsampel = dtSampling_pps$dsampel
+#' dsampel = dtSampling_pps$sampledf
 #'
 #' # Details of sampling process
-#' rincian = dtSampling_pps$rincian
+#' rincian = dtSampling_pps$details
 #'
 #' # Systematic Sampling
 #' dtSampling_sys = doSampling(
-#'    pop = pop_dt
-#'    , alloc = alokasi_dt
-#'    , nsampel = "n_primary"
-#'    , type = "U"
-#'    , ident = c("kdprov")
-#'    , method = "systematic"
-#'    , seed = 4321
+#'    pop         = pop_dt
+#'    , alloc     = alokasi_dt
+#'    , nsample   = "n_primary"
+#'    , type      = "U"
+#'    , ident     = c("kdprov")
+#'    , method    = "systematic"
+#'    , seed      = 4321
 #' )
 #'
 #' # Population data with flag sample
 #' pop_dt = dtSampling_sys$pop
 #'
 #' # Selected Samples
-#' dsampel = dtSampling_sys$dsampel
+#' dsampel = dtSampling_sys$sampledf
 #'
 #' # Details of sampling process
-#' rincian = dtSampling_sys$rincian
+#' rincian = dtSampling_sys$details
+#'
+#' # Systematic Sampling (Secondary Samples)
+#'
+#' alokasi_dt_p = alokasi_dt %>%
+#'    mutate(n_secondary = 2 * n_primary)
+#'
+#' dtSampling_sys_p = doSampling(
+#'    pop           = dtSampling_sys$pop
+#'    , alloc       = alokasi_dt_p
+#'    , nsample     = "n_secondary"
+#'    , type        = "P"
+#'    , ident       = c("kdprov")
+#'    , method      = "systematic"
+#'    , seed        = 6789
+#'    , is_secondary = TRUE
+#' )
+#'
+#' # Population data with flag sample
+#' pop_dt = dtSampling_sys_p$pop
+#'
+#' # Selected Samples
+#' dsampel = dtSampling_sys_p$sampledf
+#'
+#' # Details of sampling process
+#' rincian = dtSampling_sys_p$details
+#'
+#' # Systematic Sampling with predetermined random number (predetermined_rn parameter)
+#'
+#' alokasi_dt_rn = alokasi_dt %>% rowwise() %>% mutate(ar = runif(n(),0,1)) %>% ungroup
+#'
+#' dtSampling_sys = doSampling(
+#'    pop         = pop_dt
+#'    , alloc     = alokasi_dt_rn
+#'    , nsample   = "n_primary"
+#'    , type      = "U"
+#'    , ident     = c("kdprov")
+#'    , method    = "systematic"
+#'    , predetermined_rn = "ar"
+#'    , seed      = 4321
+#' )
+#'
+#' # Population data with flag sample
+#' pop_dt = dtSampling_sys$pop
+#'
+#' # Selected Samples
+#' dsampel = dtSampling_sys$sampledf
+#'
+#' # Details of sampling process
+#' rincian = dtSampling_sys$details
 #' }
-doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","kdkab"), implicitby = NULL, method="systematic",
-                      auxVar=NA, seed=1, verbose = TRUE){
+doSampling = function(pop, alloc, nsample, type, strata=NULL, ident=c("kdprov","kdkab"), implicitby = NULL, method="systematic",
+                      auxVar=NA, seed=1, predetermined_rn = NULL, is_secondary = FALSE, verbose = TRUE){
   # Warning apabila syarat tidak terpenuhi
-  if( length(method)==0 | length(method)>1 | !(method %in% c("systematic", "pps"))){
-    stop("Please select one method. systematic or pps")
+  if( length(method)==0 | length(method)>1 | !(method %in% c("srs","systematic", "pps"))){
+    stop("Please select one method. srs, systematic or pps")
     return()
   }
 
-  if( is.na(nsampel) ){
+  if( is.na(nsample) ){
     stop("Please select one variable as allocation sample")
     return()
   }
 
+  # if(nsample %in% c("nsam")){
+  #   alloc = alloc %>%
+  #     rename(n_aloc = nsam)
+  #
+  #   nsample = "n_aloc"
+  # }
+
+  null_strata = 0
+
   if(is.null(strata)){
+    null_strata = 1
     pop = pop %>%
       mutate(tmp_strata = as.integer(1))
 
@@ -304,19 +410,27 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
   }
 
   if( !is.null(implicitby) ){
-    sortVar = c(ident, implicitby)
-    if(verbose) message("sort by:",ident,"and",implicitby,"\n")
+    sortVar = c(ident, strata, implicitby)
+    if(verbose){
+      if(!null_strata){
+        message("sort by: ",paste(ident, collapse = ", "),", ",paste(strata, collapse = ", ")," and ",paste(implicitby, collapse = ", "),"\n")
+      }else{
+        message("sort by: ",paste(ident, collapse = ", ")," and ",paste(implicitby, collapse = ", "),"\n")
+      }
+    }
   }else{
-    sortVar = ident
-    if(verbose) message("no implicit stratification variable chosen, sort by: ",ident,"\n")
+    sortVar = c(ident, strata)
+    if(verbose){
+      if(!null_strata){
+        message("no implicit stratification variable chosen, sort by: ",paste(ident, collapse = ", ")," and ",paste(strata, collapse = ", "),"\n")
+      }else{
+        message("no implicit stratification variable chosen, sort by: ",paste(ident, collapse = ", "),"\n")
+      }
+    }
   }
 
   pop = pop %>%
     arrange_at(sortVar)
-
-  # Variabel groupByVar merupakan gabungan parameter ident dan strata
-  # sesuai dengan level group pada alokasi
-  groupByVar = c(ident,strata)
 
   # Inisialisasi daftar sampel
   dsampel    = NULL
@@ -330,40 +444,92 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
     pop = pop %>% mutate(tanggal=NA)
   }
 
-  # flagS = match("FLAGS", colnames(pop))
+  if(!is_secondary){
+
+    pop = pop %>% mutate(flags=NA, tanggal=NA)
+
+    # Variabel groupByVar merupakan gabungan parameter ident dan strata
+    # sesuai dengan level group pada alokasi
+    groupByVar = c(ident,strata)
+  }else{
+    pop = pop %>%
+      mutate(is_secondary_tmp = ifelse(!is.na(flags), NA, as.integer(1)))
+
+    alloc = alloc %>%
+      mutate(is_secondary_tmp = as.integer(1))
+
+    groupByVar = c(ident,strata,"is_secondary_tmp")
+  }
+
+  if(null_strata){
+    groupByVar_conds = c(ident)
+  }else{
+    groupByVar_conds = c(ident,strata)
+  }
+
+  # filter out null allocation
+
+  alokasi_minus = alloc %>%
+    filter(eval(parse(text = nsample)) < 0)
+
+  alokasi_nol = alloc %>%
+    filter(eval(parse(text = nsample)) == 0)
+
+  if(verbose){
+    message("Negative allocation: ",nrow(alokasi_minus),"\n")
+
+    if(nrow(alokasi_minus)>0){
+      stop("Allocation cannot be negative")
+    }
+
+    message("Zero allocation: ",nrow(alokasi_nol),"\n")
+
+    if(nrow(alokasi_nol)>0){
+      message("Removing Zero allocation\n")
+    }
+
+    if(!is.null(predetermined_rn)){
+      message("Using Predetermined Random Number on Allocation (",predetermined_rn,")\n")
+    }
+
+    if(is_secondary){
+      message("Sampling Secondary Units\n")
+    }
+  }
+
+  alloc = alloc %>%
+    filter(eval(parse(text = nsample)) > 0)
 
   switch (method,
-          "systematic" = {
+          "srs" = {
             pop = createInterval(pop, method, strata, groupByVar = groupByVar)
-
             # Rekap populasi berdasarkan group
             mRek = pop %>%
-              group_by(.dots = groupByVar) %>%
-              summarise(npop = n())
+              group_by(across(all_of(groupByVar))) %>%
+              summarise(npop = n()) %>%
+              ungroup()
 
-            # Membuat rincian penarikan sampel seperti
-            # alokasi sampel per group,
-            # populasi per group,
-            # angka random yang dipakai, interval K, dan sisa penarikan sampel
-            # seed digunakan untuk menetapkan angka random
             set.seed(seed)
 
             rincian = left_join(alloc, mRek, by=groupByVar) %>%
+              mutate_at(c("npop"), ~replace(., is.na(.), 0)) %>%
+              rowwise() %>%
               mutate(
-                ar = runif(n(),0,1),
+                # ar = ifelse(is.null(predetermined_rn), runif(n(),0,1), eval(parse(text = predetermined_rn))),
                 npop=ifelse(!is.na(npop),npop,0),
-                k = npop/eval(parse(text = nsampel)),
+                # k = npop/eval(parse(text = nsample)),
                 sisa=9999) %>%
+              ungroup() %>%
               as.data.frame()
 
             # Proses penarikan sampel per rincian alokasi
             for(i in 1:nrow(rincian)){
               # cat(i,"\n")
-              if(rincian[i,nsampel] == 0) next
+              if(rincian[i,nsample] == 0) next
 
               # Apabila populasinya ternyata 0, maka variabel sisa = alokasi
               if(rincian[i,"npop"] == 0){
-                rincian[i,"sisa"] = rincian[i,nsampel]
+                rincian[i,"sisa"] = rincian[i,nsample]
                 next
               }
 
@@ -377,22 +543,22 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
 
               # Membuat list variabel pelengkap lainnya
               lis[[strata]]  = rincian[i, strata]
-              lis[[nsampel]]   = rincian[i, nsampel]
+              lis[[nsample]]   = rincian[i, nsample]
               lis$npop    = rincian[i,"npop"]
               lis$ar      = rincian[i,"ar"]
               lis$k       = rincian[i,"k"]
 
-              if(verbose) cat("START: ")
+              # if(verbose) cat("START: ")
 
               # Membuat kondisi penarikan sampel
               conds = ""
-              for(ii in 1:length(groupByVar)){
+              for(ii in 1:length(groupByVar_conds)){
                 # Menuliskan pada console, progres penarikan sampelnya
-                txt = eval(parse(text=paste0("lis[['",groupByVar[ii],"']]"))) %>% as.character()
-                if( ii == length(groupByVar) ){
-                  if(verbose) cat(" ",groupByVar[[ii]],txt,"\n")
+                txt = eval(parse(text=paste0("lis[['",groupByVar_conds[ii],"']]"))) %>% as.character()
+                if( ii == length(groupByVar_conds) ){
+                  if(verbose) cat(" ",groupByVar_conds[[ii]],txt,"\n")
                 }else{
-                  if(verbose) cat(" ",groupByVar[[ii]],txt)
+                  if(verbose) cat(" ",groupByVar_conds[[ii]],txt)
                 }
 
                 # Penyusunan kondisi penarikan sampel sesuai
@@ -402,41 +568,35 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
                 }else{
                   conds = paste0(conds, " & ")
                 }
-                conds = paste0(conds, "eval(parse(text='",groupByVar[ii],"')) == lis[['",groupByVar[ii],"']] %>% as.character")
+                conds = paste0(conds, "eval(parse(text='",groupByVar_conds[ii],"')) == lis[['",groupByVar_conds[ii],"']] %>% as.character")
               }
 
               # Menyeleksi populasi sesuai dengan kondisi untuk
               # setiap rincian penarikan sampel
-              y = pop %>%
-                filter(eval(parse(text=conds))) %>%
-                select(INDEX) %>% unlist %>% as.numeric
+              if(!is_secondary){
+                y = pop %>%
+                  filter(eval(parse(text=conds))) %>%
+                  select(INDEX)
+              }else{
+                y = pop %>%
+                  filter(eval(parse(text=conds)) & is_secondary_tmp %in% c(1)) %>%
+                  select(INDEX)
+              }
 
               # Inisialisasi variabel
               flag    = NULL
               dsts    = NULL
               st      = NULL
-              nTemp=0
-              ix = lis$ar * lis$k
 
               # Apabila jumlah alokasi lebih atau sama dengan populasi,
               # maka sampel diambil secara take all
-              if(lis[[nsampel]] >= lis$npop){
-                st = y
+              if(lis[[nsample]] >= lis$npop){
+                st = y %>%
+                  select(INDEX) %>%
+                  unlist %>% as.numeric
               }else{ # untuk alokasi < populasi
-                while(nTemp<lis[[nsampel]]){
-                  # fs=ifelse(ix < 1, ceiling(ix), round(ix))
-                  if(ix < 1){
-                    ix = ceiling(ix)
-                    fs = ix
-                  }else{
-                    fs = round(ix)
-                  }
-
-                  flag  = c(flag, fs)
-                  nTemp = nTemp + 1
-                  ix    = ix + lis$k
-                }
-                st = y[flag]
+                set.seed(seed)
+                st = sample(pull(y), lis[[nsample]])
               }
 
               # Menandai FLAGS dan TANGGAL sampel terpilih dan menyeleksinya dari populasi
@@ -456,17 +616,214 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
                 # ix = match(c("VMIN","VMAX","INDEX"), colnames(dsts))
                 # dsts[,ix] = NULL
                 dsampel = rbindlist(list(dsampel, dsts), use.names = T, fill = T)
-                rincian[i,"sisa"] = rincian[i,nsampel] - nrow(dsts)
+                rincian[i,"sisa"] = rincian[i,nsample] - nrow(dsts)
               }
             }
 
             # Membuat rekap hasil penarikan sampel
             rek = dsampel %>%
-              group_by(.dots = groupByVar) %>%
-              summarise(jml=n())
+              group_by(across(all_of(groupByVar))) %>%
+              summarise(n_selected=n()) %>%
+              ungroup()
 
             # Join rincian dengan hasil penarikan sampel
             rincian = left_join(rincian, rek) %>%
+              mutate_at(c("n_selected"), ~replace(., is.na(.), 0)) %>%
+              as.data.frame()
+
+            pop = pop %>%
+              select(-INDEX) %>%
+              as.data.frame()
+
+            dsampel = dsampel %>%
+              select(-INDEX) %>%
+              as.data.frame()
+
+            if(strata == "tmp_strata"){
+              pop = pop %>%
+                select(-tmp_strata)
+
+              dsampel = dsampel %>%
+                select(-tmp_strata)
+            }
+
+            sisa = rincian %>%
+              summarise(sum(sisa, na.rm=T)) %>%
+              pull()
+
+            total = alloc %>%
+              summarise(sum(eval(parse(text = nsample)), na.rm=T))
+
+            persentase = round((dsampel %>% nrow) * 100.0/total, 2)
+
+            if(sisa>0){
+              message("WARNING: There are still ",sisa," allocations for which samples have not been selected. Selected ", dsampel %>% nrow," out of ", total," (",persentase,"%)\n")
+            }else{
+              if(verbose) message("All allocations have been selected. Selected ", dsampel %>% nrow," out of ", total," (",persentase,"%)\n")
+            }
+
+            rincian = rincian %>%
+              rename(n_deficit = sisa)
+
+            if("is_secondary_tmp" %in% names(pop)){
+              pop = pop %>% select(-is_secondary_tmp)
+            }
+
+            if("is_secondary_tmp" %in% names(rincian)){
+              rincian = rincian %>% select(-is_secondary_tmp)
+            }
+
+            if("is_secondary_tmp" %in% names(dsampel)){
+              dsampel = dsampel %>% select(-is_secondary_tmp)
+            }
+
+            # Return value
+            return(list(pop=pop, sampledf=dsampel, details=rincian))
+          },
+          "systematic" = {
+            pop = createInterval(pop, method, strata, groupByVar = groupByVar)
+
+            # Rekap populasi berdasarkan group
+            mRek = pop %>%
+              group_by(across(all_of(groupByVar))) %>%
+              summarise(npop = n()) %>%
+              ungroup()
+
+            # Membuat rincian penarikan sampel seperti
+            # alokasi sampel per group,
+            # populasi per group,
+            # angka random yang dipakai, interval K, dan sisa penarikan sampel
+            # seed digunakan untuk menetapkan angka random
+            set.seed(seed)
+
+            rincian = left_join(alloc, mRek, by=groupByVar) %>%
+              mutate_at(c("npop"), ~replace(., is.na(.), 0)) %>%
+              rowwise() %>%
+              mutate(
+                ar = ifelse(is.null(predetermined_rn), runif(n(),0,1), eval(parse(text = predetermined_rn))),
+                npop=ifelse(!is.na(npop),npop,0),
+                k = npop/eval(parse(text = nsample)),
+                sisa=9999) %>%
+              ungroup() %>%
+              as.data.frame()
+
+            # Proses penarikan sampel per rincian alokasi
+            for(i in 1:nrow(rincian)){
+              # cat(i,"\n")
+              if(rincian[i,nsample] == 0) next
+
+              # Apabila populasinya ternyata 0, maka variabel sisa = alokasi
+              if(rincian[i,"npop"] == 0){
+                rincian[i,"sisa"] = rincian[i,nsample]
+                next
+              }
+
+              # Inisialisasi list variabel
+              lis         = list()
+
+              # Membuat list variabel sesuai dengan parameter ident yang diberikan
+              for(ii in 1:length(ident)){
+                lis[[ident[ii]]] = rincian[i, ident[ii]]
+              }
+
+              # Membuat list variabel pelengkap lainnya
+              lis[[strata]]  = rincian[i, strata]
+              lis[[nsample]]   = rincian[i, nsample]
+              lis$npop    = rincian[i,"npop"]
+              lis$ar      = rincian[i,"ar"]
+              lis$k       = rincian[i,"k"]
+
+              # if(verbose) cat("START: ")
+
+              # Membuat kondisi penarikan sampel
+              conds = ""
+              for(ii in 1:length(groupByVar_conds)){
+                # Menuliskan pada console, progres penarikan sampelnya
+                txt = eval(parse(text=paste0("lis[['",groupByVar_conds[ii],"']]"))) %>% as.character()
+                if( ii == length(groupByVar_conds) ){
+                  if(verbose) cat(" ",groupByVar_conds[[ii]],txt,"\n")
+                }else{
+                  if(verbose) cat(" ",groupByVar_conds[[ii]],txt)
+                }
+
+                # Penyusunan kondisi penarikan sampel sesuai
+                # dengan rincian dan variabel group
+                if( ii==1 ){
+                  conds = ""
+                }else{
+                  conds = paste0(conds, " & ")
+                }
+                conds = paste0(conds, "eval(parse(text='",groupByVar_conds[ii],"')) == lis[['",groupByVar_conds[ii],"']] %>% as.character")
+              }
+
+              # Menyeleksi populasi sesuai dengan kondisi untuk
+              # setiap rincian penarikan sampel
+              if(!is_secondary){
+                y = pop %>%
+                  filter(eval(parse(text=conds))) %>%
+                  select(VMIN,VMAX,INDEX)
+              }else{
+                y = pop %>%
+                  filter(eval(parse(text=conds)) & is_secondary_tmp %in% c(1)) %>%
+                  select(VMIN,VMAX,INDEX)
+              }
+
+              # Inisialisasi variabel
+              flag    = NULL
+              dsts    = NULL
+              st      = NULL
+
+              # Apabila jumlah alokasi lebih atau sama dengan populasi,
+              # maka sampel diambil secara take all
+              if(lis[[nsample]] >= lis$npop){
+                st = y %>%
+                  select(INDEX) %>%
+                  unlist %>% as.numeric
+              }else{ # untuk alokasi < populasi
+                ix = lis[["k"]] * lis[["ar"]]
+                if(ix < 1){
+                  sys = 1 + (0:(lis[[nsample]]-1)) * lis[["k"]]
+                }else{
+                  sys = lis[["k"]] * (lis[["ar"]] + 0:(lis[[nsample]]-1))
+                }
+
+                sys = sapply(sys, function(x){ifelse(x<1, ceiling(x), round(x))})
+                st = y %>%
+                  slice(findInterval(sys, y$VMAX)) %>%
+                  select(INDEX) %>%
+                  unlist %>% as.numeric
+              }
+
+              # Menandai FLAGS dan TANGGAL sampel terpilih dan menyeleksinya dari populasi
+              if(!is.null(st)){
+                pop = pop %>%
+                  mutate(
+                    flags   = replace(flags, INDEX %in% st, type),
+                    tanggal = replace(tanggal, INDEX %in% st, paste(format(Sys.Date(), format="%d/%m/%y"))))
+
+                dsts = pop %>%
+                  filter(INDEX %in% st)
+              }
+
+              # Menggabungkan sampel terpilih ke daftar sampel
+              # Update variabel sisa pada rincian
+              if (!is.null(dsts)) {
+                # ix = match(c("VMIN","VMAX","INDEX"), colnames(dsts))
+                # dsts[,ix] = NULL
+                dsampel = rbindlist(list(dsampel, dsts), use.names = T, fill = T)
+                rincian[i,"sisa"] = rincian[i,nsample] - nrow(dsts)
+              }
+            }
+
+            # Membuat rekap hasil penarikan sampel
+            rek = dsampel %>%
+              group_by(across(all_of(groupByVar))) %>%
+              summarise(n_selected=n()) %>%
+              ungroup()
+
+            # Join rincian dengan hasil penarikan sampel
+            rincian = left_join(rincian, rek) %>%
+              mutate_at(c("n_selected"), ~replace(., is.na(.), 0)) %>%
               as.data.frame()
 
             pop = pop %>%
@@ -485,8 +842,38 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
                 select(-tmp_strata)
             }
 
+            sisa = rincian %>%
+              summarise(sum(sisa, na.rm=T)) %>%
+              pull()
+
+            total = alloc %>%
+              summarise(sum(eval(parse(text = nsample)), na.rm=T))
+
+            persentase = round((dsampel %>% nrow) * 100.0/total, 2)
+
+            if(sisa>0){
+              message("WARNING: There are still ",sisa," allocations for which samples have not been selected. Selected ", dsampel %>% nrow," out of ", total," (",persentase,"%)\n")
+            }else{
+              if(verbose) message("All allocations have been selected. Selected ", dsampel %>% nrow," out of ", total," (",persentase,"%)\n")
+            }
+
+            rincian = rincian %>%
+              rename(n_deficit = sisa)
+
+            if("is_secondary_tmp" %in% names(pop)){
+              pop = pop %>% select(-is_secondary_tmp)
+            }
+
+            if("is_secondary_tmp" %in% names(rincian)){
+              rincian = rincian %>% select(-is_secondary_tmp)
+            }
+
+            if("is_secondary_tmp" %in% names(dsampel)){
+              dsampel = dsampel %>% select(-is_secondary_tmp)
+            }
+
             # Return value
-            return(list(pop=pop , dsampel=dsampel, rincian=rincian))
+            return(list(pop=pop, sampledf=dsampel, details=rincian))
           },
           "pps" = {
             # Berhenti apabila parameter auxVar kosong
@@ -495,239 +882,167 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
               return()
             }
 
-            if(!("certainty" %in% names(pop))){
-              pop = pop %>% mutate(certainty=NA)
-            }
+            # if(!("certainty" %in% names(pop))){
+            #   pop = pop %>% mutate(certainty=NA)
+            # }
 
-            isUlang = NA
-            counter_certainty = 0
-            while(is.na(isUlang) | isUlang==TRUE){
-              counter_certainty = counter_certainty + 1
-              cat("certainty counter: ", counter_certainty, "\n")
+            # using inclusionprobabilities
 
-              # Membuat interval berdasarkan auxVar
-              pop = createInterval(pop, method, strata, auxVar = auxVar, groupByVar = groupByVar)
+            # Membuat interval berdasarkan auxVar
+            pop = createInterval(pop, method, strata, auxVar = auxVar, groupByVar = groupByVar)
 
-              # Rekap populasi berdasarkan group
-              mRek = pop %>%
-                group_by(.dots = groupByVar) %>%
-                summarise(
-                  npop  = sum(eval(parse(text=auxVar))[is.na(certainty)], na.rm=T),
-                  numobs = sum(is.na(certainty)),
-                  ncertainty = sum(!is.na(certainty))
-                ) %>%
-                ungroup
+            mRek = pop %>%
+              group_by(across(all_of(groupByVar))) %>%
+              summarise(npop = n()) %>%
+              ungroup()
 
-              # Membuat rincian penarikan sampel seperti
-              # alokasi sampel per group,
-              # populasi per group,
-              # angka random yang dipakai, interval K, dan sisa penarikan sampel
-              # seed digunakan untuk menetapkan angka random
-              set.seed(seed)
-              rincian = left_join(alloc, mRek, by=groupByVar) %>%
-                mutate(
-                  ar = runif(n(),0,1),
-                  k  = npop/eval(parse(text = nsampel)),
-                  sisa=9999,
-                  nsam = eval(parse(text = nsampel)) - ncertainty
-                )
-
-              # certainty selected (filter auxVar yang lebih dari atau sama dengan interval)
-              certainty_pop = pop %>%
-                left_join(
-                  rincian %>%
-                    select(groupByVar,k)
-                ) %>%
-                filter(!is.na(k) & k <= eval(parse(text = auxVar)) & is.na(certainty))
-
-              if(nrow(certainty_pop) > 0){
-                certainty_s = pop %>%
-                  left_join(
-                    rincian %>%
-                      select(groupByVar,nsam,k)
-                  ) %>%
-                  filter(!is.na(k) & k <= eval(parse(text = auxVar)) & is.na(certainty)) %>%
-                  group_by(.dots = groupByVar) %>%
-                  mutate(cert_now = n()) %>%
-                  sample_n(min(nsam, cert_now)) %>%
-                  ungroup() %>%
-                  pull(INDEX)
-              }else{
-                certainty_s = NULL
-              }
-
-              if(length(certainty_s)>0){
-                isUlang = TRUE
-
-                pop = pop %>%
-                  mutate(
-                    flags   = replace(flags, INDEX %in% certainty_s, type),
-                    tanggal = replace(tanggal, INDEX %in% certainty_s, paste(format(Sys.Date(), format="%d/%m/%y"))),
-                    certainty = replace(certainty, INDEX %in% certainty_s, "1"),
-                  )
-              }else{
-                isUlang = FALSE
-
-                rincian = rincian %>%
-                  mutate(sisa = nsam)
-
-                dsampel = pop %>%
-                  filter(!is.na(flags))
-              }
-            }
-
-            rincian = rincian %>%
+            set.seed(seed)
+            rincian = left_join(alloc, mRek, by=groupByVar) %>%
+              # mutate_at(c("npop","numobs","ncertainty"), ~replace(., is.na(.), 0)) %>%
+              mutate_at(c("npop"), ~replace(., is.na(.), 0)) %>%
+              rowwise() %>%
               mutate(
-                sisa = ifelse(is.na(nsam), nsam_tot, sisa)
-                , nsam = ifelse(is.na(nsam), nsam_tot, nsam)
+                ar = ifelse(is.null(predetermined_rn), runif(n(),0,1), eval(parse(text = predetermined_rn))),
+                npop=ifelse(!is.na(npop),npop,0),
+                k = npop/eval(parse(text = nsample)),
+                sisa=9999) %>%
+              ungroup() %>%
+              as.data.frame()
+
+            pop = pop %>%
+              left_join(
+                rincian %>%
+                  select(all_of(c(groupByVar,nsample)))
               ) %>%
-              mutate_at(c("npop"), ~replace(., is.na(.), 0))
+              mutate_at(nsample, ~replace(., is.na(.), 0)) %>%
+              group_by(across(all_of(groupByVar))) %>%
+              mutate(
+                pi = inclusionprobabilities(eval(parse(text=auxVar)), unique(eval(parse(text = nsample))))
+                , cumsumpi = cumsum(pi)
+                , cumsumpi = cumsumpi - pi
+              ) %>%
+              ungroup()
 
             # Proses penarikan sampel per rincian alokasi
             for(i in 1:nrow(rincian)){
-              if(rincian[i,nsampel] == 0) next
+              if(rincian[i,nsample] == 0) next
 
               # Apabila populasinya ternyata 0, maka variabel sisa = alokasi
               if(rincian[i,"npop"] == 0){
-                rincian[i,"sisa"] = rincian[i, nsampel]
+                rincian[i,"sisa"] = rincian[i, nsample]
                 next
               }
 
-              # Proses penarikan sampel pps, apabila ada 1 BS yang terpilih
-              # lebih dari satu kali, penarikan sampel diulang
-              # menggunakan angka random baru
-              isUlang = NA
-              while(is.na(isUlang) | isUlang==TRUE){
-                # Update AR apabila 1 BS terpilih lebih dari 1 kali
-                if(isUlang==TRUE & !is.na(isUlang)){
-                  rincian[i,"ar"] = runif(1,0,1)
-                }
-                isUlang = FALSE
+              # Inisialisasi list variabel
+              lis         = list()
 
-                # Inisialisasi list variabel
-                lis         = list()
+              # Membuat list variabel sesuai dengan parameter ident yang diberikan
+              for(ii in 1:length(ident)){
+                lis[[ident[ii]]] = rincian[i, ident[ii]]
+              }
 
-                # Membuat list variabel sesuai dengan parameter ident yang diberikan
-                for(ii in 1:length(ident)){
-                  lis[[ident[ii]]] = rincian[i, ident[ii]]
-                }
+              # Membuat list variabel pelengkap lainnya
+              lis[[strata]]  = rincian[i,strata]
+              lis[[nsample]] = rincian[i,nsample]
+              lis$nsam = rincian[i,"nsam"]
+              lis$npop    = rincian[i,"npop"]
+              lis$numobs  = rincian[i,"numobs"]
+              lis$ar      = rincian[i,"ar"]
+              lis$k       = rincian[i,"k"]
 
-                # Membuat list variabel pelengkap lainnya
-                lis[[strata]]  = rincian[i,strata]
-                lis[[nsampel]] = rincian[i,nsampel]
-                lis$npop    = rincian[i,"npop"]
-                lis$numobs  = rincian[i,"numobs"]
-                lis$ar      = rincian[i,"ar"]
-                lis$k       = rincian[i,"k"]
+              # if(verbose) cat("START: ")
 
-                # ==cat("START:")
-
-                # Membuat kondisi penarikan sampel
-                conds = ""
-                for(ii in 1:length(groupByVar)){
-                  # Menuliskan pada console, progres penarikan sampelnya
-                  txt = eval(parse(text=paste0("lis[['",groupByVar[ii],"']]"))) %>% as.character()
-                  if( ii == length(groupByVar) ){
-                    if(verbose) cat(" ",groupByVar[[ii]],txt,"\n")
-                  }else{
-                    if(verbose) cat(" ",groupByVar[[ii]],txt)
-                  }
-
-                  # Penyusunan kondisi penarikan sampel sesuai
-                  # dengan rincian dan variabel group
-                  if( ii==1 ){
-                    conds = ""
-                  }else{
-                    conds = paste0(conds, " & ")
-                  }
-                  conds = paste0(conds, "eval(parse(text='",groupByVar[ii],"')) == lis[['",groupByVar[ii],"']] %>% as.character")
-                }
-
-                # Menyeleksi populasi sesuai dengan kondisi untuk
-                # setiap rincian penarikan sampel
-                y = pop %>%
-                  filter(eval(parse(text=conds)) & is.na(certainty)) %>%
-                  select(VMIN,VMAX,INDEX)
-
-                # y = pop %>%
-                #   filter(PROV==lis[["PROV"]] & KAB==lis[["KAB"]] & STRATA==lis[["STRATA"]]) %>%
-                #   select(INDEX) %>% unlist %>% as.numeric
-
-                # Inisialisasi variabel
-                flag    = NULL
-                dsts    = NULL
-                st      = NULL
-                nTemp=0
-                last_fs = 0
-                ix = lis$ar * lis$k
-
-                # Apabila jumlah alokasi lebih dari populasi,
-                # maka revisi alokasi
-                if(lis[[nsampel]] > nrow(y)){
-                  stop("Alokasi Berlebih, cek alokasi == (",lis[[1]],") ", lis[[nsampel]]," ",nrow(y))
-                  return()
+              # Membuat kondisi penarikan sampel
+              conds = ""
+              for(ii in 1:length(groupByVar_conds)){
+                # Menuliskan pada console, progres penarikan sampelnya
+                txt = eval(parse(text=paste0("lis[['",groupByVar_conds[ii],"']]"))) %>% as.character()
+                if( ii == length(groupByVar_conds) ){
+                  if(verbose) cat(" ",groupByVar_conds[[ii]],txt,"\n")
                 }else{
-                  while(nTemp<as.numeric(lis[[nsampel]]) & !isUlang){
-                    fs = y %>%
-                      filter(as.numeric(ceiling(ix))>=VMIN & as.numeric(ceiling(ix))<=VMAX) %>%
-                      select(INDEX) %>%
-                      unlist %>% as.numeric
-
-                    # cat(nTemp," == ",as.numeric(ix), " == ", fs,"\n")
-                    # Cek apakah BS terpilih lebih dari sekali
-                    if(fs == last_fs){
-                      if(verbose) cat(lis[["ar"]],"\n")
-                      if(verbose) cat("ix: ",as.numeric(ix)," last_fs: ",last_fs," fs: ",fs,"\n")
-                      if(verbose) cat("INDEX SAMA (ULANG)\n")
-                      isUlang = TRUE
-                    } else {
-                      last_fs = fs
-                    }
-
-                    flag  = c(flag, fs)
-                    nTemp = nTemp + 1
-
-                    ix    = ix + lis$k
-                  }
-                  st = flag
+                  if(verbose) cat(" ",groupByVar_conds[[ii]],txt)
                 }
 
-                # Menandai FLAGS dan TANGGAL sampel terpilih dan menyeleksinya dari populasi
-                if(!is.null(st) & !isUlang){
-                  pop = pop %>%
-                    mutate(flags   = replace(flags, INDEX %in% st, type),
-                           tanggal = replace(tanggal, INDEX %in% st, paste(format(Sys.Date(), format="%d/%m/%y"))))
-
-                  dsts = pop %>%
-                    filter(INDEX %in% st)
+                # Penyusunan kondisi penarikan sampel sesuai
+                # dengan rincian dan variabel group
+                if( ii==1 ){
+                  conds = ""
+                }else{
+                  conds = paste0(conds, " & ")
                 }
+                conds = paste0(conds, "eval(parse(text='",groupByVar_conds[ii],"')) == lis[['",groupByVar_conds[ii],"']] %>% as.character")
+              }
 
-                # Menggabungkan sampel terpilih ke daftar sampel
-                # Update variabel sisa pada rincian
-                if (!is.null(dsts) & !isUlang) {
-                  # ix = match(c("VMIN","VMAX","INDEX"), colnames(dsts))
-                  # dsts[,ix] = NULL
-                  dsampel = rbindlist(list(dsampel, dsts), use.names = T, fill = T)
-                  rincian[i,"sisa"] = rincian[i,nsampel] - nrow(dsts)
-                }
+              # Menyeleksi populasi sesuai dengan kondisi untuk
+              # setiap rincian penarikan sampel
+              if(!is_secondary){
+                y = pop %>%
+                  filter(eval(parse(text=conds))) %>%
+                  select(VMIN,VMAX,INDEX,cumsumpi)
+              }else{
+                y = pop %>%
+                  filter(eval(parse(text=conds)) & is_secondary_tmp %in% c(1)) %>%
+                  select(VMIN,VMAX,INDEX,cumsumpi)
+              }
+
+              # Inisialisasi variabel
+              flag    = NULL
+              dsts    = NULL
+              st      = NULL
+
+              sys = 0:(lis[[nsample]] - 1) +  lis$ar
+
+              # Apabila jumlah alokasi lebih atau sama dengan populasi,
+              # maka sampel diambil secara take all
+              if(lis[[nsample]] >= lis$npop){
+                st = y %>%
+                  select(INDEX) %>%
+                  unlist %>% as.numeric
+              }else{ # untuk alokasi < populasi
+                st = y %>%
+                  slice(findInterval(sys, y$cumsumpi)) %>%
+                  select(INDEX) %>%
+                  unlist %>% as.numeric
+              }
+
+              # Menandai FLAGS dan TANGGAL sampel terpilih dan menyeleksinya dari populasi
+              if(!is.null(st)){
+                pop = pop %>%
+                  mutate(flags   = replace(flags, INDEX %in% st, type),
+                         tanggal = replace(tanggal, INDEX %in% st, paste(format(Sys.Date(), format="%d/%m/%y"))))
+
+                dsts = pop %>%
+                  filter(INDEX %in% st)
+              }
+
+              # Menggabungkan sampel terpilih ke daftar sampel
+              # Update variabel sisa pada rincian
+              if (!is.null(dsts)) {
+                # ix = match(c("VMIN","VMAX","INDEX"), colnames(dsts))
+                # dsts[,ix] = NULL
+                dsampel = rbindlist(list(dsampel, dsts), use.names = T, fill = T)
+                rincian[i,"sisa"] = rincian[i,nsample] - nrow(dsts)
               }
             }
 
             # Membuat rekap hasil penarikan sampel
             rek = dsampel %>%
-              group_by(.dots = groupByVar) %>%
-              summarise(jml=n())
+              group_by(across(all_of(groupByVar))) %>%
+              summarise(n_selected=n()) %>%
+              ungroup()
 
-            # Join rincian dengan hasil penarikan sampel
+            # Join rincian dengan hasil penarikan sampel dan update variabel sisa
             rincian = left_join(rincian, rek) %>%
+              mutate_at(c("n_selected"), ~replace(., is.na(.), 0)) %>%
+              mutate(sisa = eval(parse(text = nsample)) - n_selected) %>%
               as.data.frame()
 
             pop = pop %>%
-              select(-VMIN,-VMAX,-INDEX) %>%
+              select(-VMIN,-VMAX,-INDEX, -one_of(nsample), -pi, -cumsumpi) %>%
               as.data.frame()
 
             dsampel = dsampel %>%
-              select(-VMIN,-VMAX,-INDEX) %>%
+              select(-VMIN,-VMAX,-INDEX, -one_of(nsample), -pi, -cumsumpi) %>%
               as.data.frame()
 
             if(strata == "tmp_strata"){
@@ -738,8 +1053,38 @@ doSampling = function(pop, alloc, nsampel, type, strata=NULL, ident=c("kdprov","
                 select(-tmp_strata)
             }
 
+            sisa = rincian %>%
+              summarise(sum(sisa, na.rm=T)) %>%
+              pull()
+
+            total = alloc %>%
+              summarise(sum(eval(parse(text = nsample)), na.rm=T))
+
+            persentase = round((dsampel %>% nrow) * 100.0/total, 2)
+
+            if(sisa>0){
+              message("WARNING: There are still ",sisa," allocations for which samples have not been selected. Selected ", dsampel %>% nrow," out of ", total," (",persentase,"%)\n")
+            }else{
+              if(verbose) message("All allocations have been selected. Selected ", dsampel %>% nrow," out of ", total," (",persentase,"%)\n")
+            }
+
+            rincian = rincian %>%
+              rename(n_deficit = sisa)
+
+            if("is_secondary_tmp" %in% names(pop)){
+              pop = pop %>% select(-is_secondary_tmp)
+            }
+
+            if("is_secondary_tmp" %in% names(rincian)){
+              rincian = rincian %>% select(-is_secondary_tmp)
+            }
+
+            if("is_secondary_tmp" %in% names(dsampel)){
+              dsampel = dsampel %>% select(-is_secondary_tmp)
+            }
+
             # Return value
-            return(list(pop=pop, dsampel=dsampel, rincian=rincian))
+            return(list(pop=pop, sampledf=dsampel, details=rincian))
           }
   )
 
